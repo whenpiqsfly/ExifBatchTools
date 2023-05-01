@@ -39,7 +39,7 @@ photos and videos. If you're anal, lazy and paranoid like me, you
      memories, knowing they may decide to drop support for your backup app at
      any time or to discontinue the service altogether, *ahem* amazon photos.
 ExifBatchTools.py is the main script that allows you to access other functions
-by specifying run modes.
+by specifying run modes (stackable).
 
 --dedupe
 
@@ -60,21 +60,22 @@ date photo/video at the source location
 
 --sort
 
-sort mode attempts to move photos and videos from source directory into the
-existing directory structure in target directory, provided the target dirs are
+sort mode attempts to move photos and videos from target directory into the
+existing directory structure in source directory, provided the source dirs are
 populated with existing photos. This is useful when you need to sort from
 multiple sources into the same folders (say, your phone and your SO's phone). 
-You've sorted your photos into directories and now wants to sort your SO's
-photos into the same directories. For each photo in source directory, the script
-reads the date taken from its exif data. It then looks for a folder where photos
-of the same date are stored, and moved the source photo there undered 'moved'
-subdirectory. For example, it'd move 'source/IMG_2018_0919_122147.jpg' to
-'target/2018/09 Monterrey Trip/moved/IMG_2018_0919_122147.jpg' if the
-'09 Monterray Trip' folders contains other photos from 2018/09/19.
+You've sorted your photos into directories and now want to sort your SO's
+photos into the same directories. For each photo in target directory, the script
+reads the date taken from its exif data. It then looks for a folder in the
+source directory where photos of the same date are stored, and moved the target
+photo there undered 'moved' subdirectory. For example, it'd move
+'target/IMG_2018_0919_122147.jpg' to
+'source/2018/09 Monterrey Trip/moved/IMG_2018_0919_122147.jpg'
+if the '09 Monterray Trip' folders contains other photos from 2018/09/19.
 
 --fix_dates (TODO)
 
-fix_dates mode fixes ctime and mtime of photos in target directory. This can be
+fix_dates mode fixes ctime and mtime of photos in source directory. This can be
 easily accomlished with exiftool (-DateTimeOriginal>FileCreateDate), but can be
 imprecise since standard exif doesn't store timezone information. If you are
 organizing your France photos in San Francisco, you'd be off by 9 hours (or 10,
@@ -83,42 +84,6 @@ difference by reading GPS data from exif, match it against a timezone, and
 compare against local machine timezone to compute the correct ctime and mtime.
 
 """
-parser = argparse.ArgumentParser(description=desc, formatter_class=RawTextHelpFormatter)
-parser_group = parser.add_mutually_exclusive_group(required=True)
-parser_group.add_argument('--dedupe', action='store_true', help="Dedupe mode - Remove the dupes in target directory.")
-parser_group.add_argument('--sort', action='store_true', help="Sort mode - Sort images from target directory into source directory.")
-
-parser.add_argument('-s', '--source', type=str, required=True, default=None, help="Source of truth directory")
-parser.add_argument('-t', '--target', type=str, required=True, default=None, help="Target directory to analyze")
-parser.add_argument('-n', '--num', type=int, required=False, default=0, help="Quit after num duplicates are found")
-parser.add_argument('-l', '--logfile', type=str, required=False, default="./DedupeFiles.log", help="Set location of logfile")
-parser.add_argument('-v', '--verbose', action='store_true', help="Print extra information")
-parser.add_argument('--ignore_mtime', action='store_true', help="[Dedupe mode] Ignores modified timestamp when matching")
-parser.add_argument('--ignore_size', action='store_true', help="[Dedupe mode] Ignores file size when matching")
-
-args = parser.parse_args()
-
-# setup logging
-logger = logging.getLogger('DedupeFiles')
-handler = logging.FileHandler(args.logfile, 'w', encoding = 'utf-8')
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler) 
-logger.setLevel(logging.INFO)
-
-print("Source directory:", args.source)
-print("Target directory:", args.target)
-print("Logfile:         ", args.logfile)
-print("File limit:      ", args.num, "(0 = unlimited)")
-print("Verbose:         ", str(args.verbose))
-
-if args.dedupe:
-	print("Mode:            Dedupe")
-	print("Ignore mtime:    ", str(args.ignore_mtime))
-	print("Ignore size:     ", str(args.ignore_size))
-elif args.sort:
-	print("Mode:            Sort")
-
 
 def query_yes_no(question, default="yes"):
     """Ask a yes/no question via raw_input() and return their answer.
@@ -150,14 +115,58 @@ def query_yes_no(question, default="yes"):
         else:
             sys.stdout.write("Please respond with 'yes' or 'no' " "(or 'y' or 'n').\n")
 
+def main():
+    parser = argparse.ArgumentParser(description=desc, formatter_class=RawTextHelpFormatter)
+    parser.add_argument('-dedupe', action='store_true', help="Dedupe mode - Remove the dupes in target directory.")
+    parser.add_argument('-sort', action='store_true', help="Sort mode - Sort images from target directory into source directory.")
 
-if args.dedupe:
-	dedupe = EBTDedupe(args.source, args.target, args.ignore_mtime, args.ignore_size)
-	if dedupe is not None:
-		dry_run = query_yes_no("Dry run?")
-		dedupe.Dedupe(dry_run,  args.verbose, args.num, logger)
-elif args.sort:
-    sort = EBTSort(args.source, args.target)
-    if sort is not None:
-        dry_run = query_yes_no("Dry run?")
-        sort.Sort(dry_run, args.num, logger)
+    parser.add_argument('-s', '--source', type=str, required=True, default=None, help="Source of truth directory")
+    parser.add_argument('-t', '--target', type=str, required=True, default=None, help="Duplicate and/or unsorted directory to analyze")
+    parser.add_argument('-n', '--num', type=int, default=0, help="Quit after num duplicates are found")
+    parser.add_argument('-l', '--logfile', type=str, default="./DedupeFiles.log", help="Set location of logfile")
+    parser.add_argument('-v', '--verbose', action='store_true', help="Print extra information")
+    parser.add_argument('-ignore_mtime', action='store_true', help="[Dedupe mode] Ignores modified timestamp when matching")
+    parser.add_argument('-ignore_size', action='store_true', help="[Dedupe mode] Ignores file size when matching")
+
+    args = parser.parse_args()
+
+    # setup logging
+    logger = logging.getLogger('DedupeFiles')
+    handler = logging.FileHandler(args.logfile, 'w', encoding = 'utf-8')
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler) 
+    logger.setLevel(logging.INFO)
+
+    mode = set()
+    if args.dedupe:
+        mode.add("Dedupe")
+    if args.sort:
+        mode.add("Sort")
+
+    if not mode:
+        parser.error('No mode specified, add -dedupe or -sort (or both)')
+
+    print("Mode:            ", mode)
+    print("Ignore mtime:    ", str(args.ignore_mtime))
+    print("Ignore size:     ", str(args.ignore_size))
+    print("Source directory:", args.source)
+    print("Target directory:", args.target)
+    print("Logfile:         ", args.logfile)
+    print("File limit:      ", args.num, "(0 = unlimited)")
+    print("Verbose:         ", str(args.verbose))
+
+
+    if args.dedupe:
+        dedupe = EBTDedupe(args.source, args.target, args.ignore_mtime, args.ignore_size)
+        if dedupe is not None:
+            dry_run = query_yes_no("Dry run?")
+            dedupe.Dedupe(dry_run,  args.verbose, args.num, logger)
+    if args.sort:
+        sort = EBTSort(args.source, args.target)
+        if sort is not None:
+            dry_run = query_yes_no("Dry run?")
+            sort.Sort(dry_run, args.num, logger)
+
+if __name__ == "__main__":
+         main()
