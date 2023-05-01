@@ -7,6 +7,7 @@ from halo import Halo
 from datetime import datetime
 import glob
 import os
+import shutil
 
 class EBTSort:
     def __init__(self, source, target):
@@ -69,11 +70,23 @@ class EBTSort:
 
             try:
                 os.makedirs(destFolder, exist_ok=True)
-                os.rename(filePath, destPath)
-                logger.info("Moved " + filePath + " to " + destPath)
+                try:
+                    os.rename(filePath, destPath)
+                    logger.info("Moved " + filePath + " to " + destPath)
+                except OSError as err:
+                    # most likely failure reason: rename across local and network drives
+                    # for overwrites: try copy first before delete
+                    logger.warning("Failed to rename " + filePath + " to " + destPath + ":" + repr(err))
+                    shutil.copy2(filePath, destPath)
+                    logger.info("Copied " + filePath + " to " + destPath)
+                    os.remove(filePath)
+                    logger.info("Deleted " + filePath)
+                    # if we fail here again let it fail.
+
                 moved += 1
                 if limit > 0 and moved >= limit:
                     break
+
             except OSError as err:
                 print("OS error: {0}".format(err))
                 logger.warning("Failed to rename " + filePath + " to " + destPath + ":" + repr(err))

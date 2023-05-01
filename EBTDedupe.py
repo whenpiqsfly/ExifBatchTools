@@ -43,7 +43,7 @@ class EBTDedupe:
 
             # TODO: check to see file is image or video
             if os.path.isfile(filepath) :
-                hashkey = self.create_key(filepath, self.ignore_mtime, self.ignore_size)
+                hashkey = self._CreateKey(filepath, self.ignore_mtime, self.ignore_size)
                 srcfile = self.library.get(hashkey)
                 counter += 1
 
